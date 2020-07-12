@@ -1,0 +1,5 @@
+# pgos extension
+comment = 'Provides deflate and inflate and gzip functions for use with bytea and text.'
+default_version = '1.0'
+module_pathname = '$libdir/pgcompress'
+relocatable = true
