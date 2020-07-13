@@ -1,48 +1,5 @@
 #include "pgcompress.h"
 
-#define R 6371
-#define TO_RAD (3.1415926536 / 180)
-
-/**
- * compute the distance between two points using real data types
- */
-Datum pgcompress_geodistance_real(PG_FUNCTION_ARGS)
-{
-    float4 alat = PG_GETARG_FLOAT4(0);
-    float4 alon = PG_GETARG_FLOAT4(1);
-    float4 blat = PG_GETARG_FLOAT4(2);
-    float4 blon = PG_GETARG_FLOAT4(3);
-    float4 dx, dy, dz;
-    alon -= blon;
-    alon *= TO_RAD, alat *= TO_RAD, blat *= TO_RAD;
-
-    dz = sin(alat) - sin(blat);
-    dx = cos(alon) * cos(alat) - cos(blat);
-    dy = sin(alon) * cos(alat);
-    PG_RETURN_FLOAT4(asin(sqrt(dx * dx + dy * dy + dz * dz) / 2) * 2 * R);
-}
-
-
-/**
- * compute the distance between two points using double data types
- */
-Datum pgcompress_geodistance_double(PG_FUNCTION_ARGS)
-{
-    float4 alat = PG_GETARG_FLOAT8(0);
-    float4 alon = PG_GETARG_FLOAT8(1);
-    float4 blat = PG_GETARG_FLOAT8(2);
-    float4 blon = PG_GETARG_FLOAT8(3);
-    float4 dx, dy, dz;
-    alon -= blon;
-    alon *= TO_RAD, alat *= TO_RAD, blat *= TO_RAD;
-
-    dz = sin(alat) - sin(blat);
-    dx = cos(alon) * cos(alat) - cos(blat);
-    dy = sin(alon) * cos(alat);
-    PG_RETURN_FLOAT8(asin(sqrt(dx * dx + dy * dy + dz * dz) / 2) * 2 * R);
-}
-
-
 /**
  * compress text data
  * returns bytea
@@ -123,51 +80,73 @@ Datum pgcompress_inflate_bytea(PG_FUNCTION_ARGS)
     PG_RETURN_BYTEA_P(PGCOMPRESSInflate((struct varlena *) source));
 }
 
+void *myalloc OF((void *, unsigned, unsigned));
+void myfree OF((void *, void *));
+
+void *myalloc(q, n, m)
+    void *q;
+    unsigned n, m;
+{
+    return palloc0(n * m);
+}
+
+void myfree(void *q, void *p)
+{
+    (void)q;
+    pfree(p);
+}
+
+static alloc_func zalloc = myalloc;
+static free_func zfree = myfree;
+
 
 /*
  * Create a compressed version of a varlena datum
  */
 static struct varlena * PGCOMPRESSDeflate(struct varlena *source, bool gzip)
 {
+
+    // zlib struct
+    z_stream stream;
+
     //data structure for the compressed data
     struct varlena *dest;
 
-    // zlib struct
-    z_stream defstream;
+    /* conservative upper bound for compressed data */
+    uLong complen;
+    complen = VARSIZE(source) + ((VARSIZE(source) + 7) >> 3) + ((VARSIZE(source) + 63) >> 6) + 5 + 18;
 
     // only allow 200MB of memory consumption
-    if (((VARSIZE(source) - VARHDRSZ) * 2 + VARHDRSZ) > 200000000) {
-        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("Deflate limited to 200MB of memory.")));
-        SET_VARSIZE(dest, VARHDRSZ);
-        return dest;
-    }
+    //if (complen > 200000000) {
+    //    ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("Deflate limited to 200MB of memory.")));
+    //    dest = (struct varlena *) palloc(VARHDRSZ);
+    //    SET_VARSIZE(dest, VARHDRSZ);
 
-    // alocate memory
-    dest = (struct varlena *) palloc((VARSIZE(source) - VARHDRSZ) * 2 + VARHDRSZ);
+    //    //return the dest pointer
+    //    return dest;
+    //}
+
+    dest = (struct varlena *) palloc0(complen + VARHDRSZ);
 
     // zlib deflate object
-    defstream.zalloc = Z_NULL;
-    defstream.zfree  = Z_NULL;
-    defstream.opaque = Z_NULL;
+    stream.zalloc = zalloc;
+    stream.zfree  = zfree;
+    stream.opaque = Z_NULL;
 
-    // setup "a" as the input and "b" as the compressed output
-    defstream.avail_in  = (uInt)(VARSIZE(source) - VARHDRSZ); // size of input, string + terminator
-    defstream.next_in   = (Bytef *) VARDATA(source); // input char array
-    defstream.avail_out = (VARSIZE(source) - VARHDRSZ) * 2; // size of output
-    defstream.next_out  = (Bytef *) VARDATA(dest); // output char array
+    stream.next_in   = (Bytef *) VARDATA(source); // input char array
+    stream.avail_in  = VARSIZE(source) - VARHDRSZ;
+    stream.avail_out = complen;
+    stream.next_out  = (Bytef *) VARDATA(dest); // output char array
 
-    // the actual compression work.
-    window_bits = MAX_WBITS;
-    if(gzip) {
-        window_bits += 16;
-    }
+    deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, gzip ? MAX_WBITS + 16: MAX_WBITS, MAX_MEM_LEVEL, Z_DEFAULT_STRATEGY);
 
-    deflateInit2(&defstream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, window_bits, DEF_MEM_LEVEL, Z_DEFAULT_STRATEGY);
-    deflate(&defstream, Z_FINISH);
-    deflateEnd(&defstream);
+
+    deflate(&stream, Z_FINISH);
+
+    deflateEnd(&stream);
 
     //tell postgres about actual size of the compressed data
-    SET_VARSIZE(dest,  defstream.total_out + VARHDRSZ);
+    SET_VARSIZE(dest,  stream.total_out + VARHDRSZ);
 
     //return the dest pointer
     return dest;
@@ -182,26 +161,39 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source)
     //data structure for the uncompressed data
     struct varlena *dest;
 
-    //compute compressed and uncompressed bounds
-    uLongf compSize  = VARSIZE(source) - VARHDRSZ;
-    uLongf ucompSize = compressBound(compSize) * 100;
+    z_stream stream;
+    int err;
+    long unsigned int i = 2;
+    uLongf sourceLen = VARSIZE(source) - VARHDRSZ;
 
-    // only allow 200MB of memory consumption
-    if (ucompSize > 20000000) {
-        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("Deflate limited to 200MB of memory.")));
-        SET_VARSIZE(dest, VARHDRSZ);
-        return dest;
-    }
+    stream.next_in = (Bytef *) VARDATA(source);
+    stream.avail_in = sourceLen;
 
-    // alocate memory
-    dest = (struct varlena *) palloc(ucompSize + VARHDRSZ);
+    dest = palloc0(20 + VARHDRSZ);
+    stream.next_out  = (Bytef *) VARDATA(dest);
+    stream.avail_out = 20;
 
-    // Inflate - uncompress the data and update ucompSize
-    uncompress((Bytef *)VARDATA(dest), &ucompSize, (Bytef *)VARDATA(source), compSize);
+    stream.zalloc = zalloc;
+    stream.zfree = zfree;
+    stream.opaque = (voidpf)0;
+
+    //15+32 = detect if gzip or deflate via headers
+    inflateInit2(&stream, 15+32);
+
+    do {
+        if (stream.avail_out == 0) {
+            dest             = repalloc(dest, sourceLen * i + VARHDRSZ);
+            stream.next_out  = (Bytef *) (&(VARDATA(dest))[sourceLen * i]);
+            stream.avail_out = sourceLen;
+            i++;
+        }
+        err = inflate(&stream, Z_SYNC_FLUSH);
+    } while (err == Z_OK);
 
     //tell postgres about actual size of the uncompressed data
-    SET_VARSIZE(dest, ucompSize + VARHDRSZ);
+    SET_VARSIZE(dest, stream.total_out + VARHDRSZ);
 
-    //return the dest pointer
+    inflateEnd(&stream);
+
     return dest;
 }
