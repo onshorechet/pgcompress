@@ -522,23 +522,11 @@ brotli_g_free_wrapper(void *opaque, void *address)
  */
 static struct varlena * PGCOMPRESSEncodeBrotli(struct varlena *source, int level)
 {
-
-    // zlib struct
-    BrotliEncoderState* stream;
-
     //data structure for the compressed data
     struct varlena *dest;
 
     /* conservative upper bound for compressed data */
     uLong complen;
-
-    stream = BrotliEncoderCreateInstance(
-        &brotli_g_malloc_wrapper /*alloc_func*/,
-        &brotli_g_free_wrapper /*free_func*/,
-        NULL /*opaque*/
-    );
-
-    BrotliEncoderSetParameter(stream, BROTLI_PARAM_QUALITY, level);
 
     complen = BrotliEncoderMaxCompressedSize(VARSIZE(source));
 
@@ -553,6 +541,7 @@ static struct varlena * PGCOMPRESSEncodeBrotli(struct varlena *source, int level
         &complen,
         (Bytef *) VARDATA(dest)
     );
+
 
     //tell postgres about actual size of the compressed data
     SET_VARSIZE(dest,  complen + VARHDRSZ);
@@ -676,6 +665,8 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
         );
 
     } while (result == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT && chunkindex < MAX_CHUNKS);
+
+    BrotliDecoderDestroyInstance(decoder);
 
     //fill the postgresql datastructure
     dest = (struct varlena *) palloc0(total_out + VARHDRSZ);
