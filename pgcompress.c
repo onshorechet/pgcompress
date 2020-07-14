@@ -14,14 +14,18 @@ Datum pgcompress_encode_compressed_text(PG_FUNCTION_ARGS)
 
     //get the default or provided compression
     int type  = PG_GETARG_INT32(1);
+    if(type < 0 || type > 3) {
+        type = 0;
+    }
+
+    if(type == ENBR) {
+        level = BROTLI_DEFAULT_QUALITY;
+    }
 
     if (PG_NARGS() == 3) {
         level = PG_GETARG_INT32(2);
     }
 
-    if(type < 0 || type > 3) {
-        type = 0;
-    }
 
     if(type != ENBR) {
         if (level < 0 || level > 9) {
@@ -51,12 +55,22 @@ Datum pgcompress_encode_compressed_bytea(PG_FUNCTION_ARGS)
     // get the source bytea
     bytea *source = PG_GETARG_BYTEA_P(0);
 
+    int level = Z_DEFAULT_COMPRESSION;
+
     //get the default or provided compression
     int type  = PG_GETARG_INT32(1);
-    int level = Z_DEFAULT_COMPRESSION;
     if(type < 0 || type > 3) {
         type = 0;
     }
+
+    if(type == ENBR) {
+        level = BROTLI_DEFAULT_QUALITY;
+    }
+
+    if (PG_NARGS() == 3) {
+        level = PG_GETARG_INT32(2);
+    }
+
 
     if(type != ENBR) {
         if (level < 0 || level > 9) {
@@ -307,7 +321,7 @@ Datum pgcompress_encode_br_bytea(PG_FUNCTION_ARGS)
     bytea *source = PG_GETARG_BYTEA_P(0);
 
     //get the default or provided compression
-    int level = Z_DEFAULT_COMPRESSION;
+    int level = BROTLI_DEFAULT_QUALITY;
     if (PG_NARGS() == 2) {
         level = PG_GETARG_INT32(1);
     }
