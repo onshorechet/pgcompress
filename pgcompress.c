@@ -666,8 +666,6 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
 
     } while (result == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT && chunkindex < MAX_CHUNKS);
 
-    BrotliDecoderDestroyInstance(decoder);
-
     //fill the postgresql datastructure
     dest = (struct varlena *) palloc0(total_out + VARHDRSZ);
 

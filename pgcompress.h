@@ -2,8 +2,8 @@
 #include "fmgr.h"
 #include "zlib.h"
 #include "common/pg_lzcompress.h"
-#include "brotli/encode.h"
 #include "brotli/decode.h"
+#include "brotli/encode.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
