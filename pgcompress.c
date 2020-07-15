@@ -1,6 +1,5 @@
 #include "pgcompress.h"
 
-
 /**
  * compress text data
  * returns bytea
@@ -26,7 +25,6 @@ Datum pgcompress_encode_compressed_text(PG_FUNCTION_ARGS)
         level = PG_GETARG_INT32(2);
     }
 
-
     if(type != ENBR) {
         if (level < 0 || level > 9) {
             level = Z_DEFAULT_COMPRESSION;
@@ -39,9 +37,9 @@ Datum pgcompress_encode_compressed_text(PG_FUNCTION_ARGS)
 
     if(type != ENBR) {
         // compress and return the data to postgres as a bytea
-        PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, type, level));
+        PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, type, level));
     } else {
-        PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((struct varlena *) source, level));
+        PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, level));
     }
 }
 
@@ -71,6 +69,49 @@ Datum pgcompress_encode_compressed_bytea(PG_FUNCTION_ARGS)
         level = PG_GETARG_INT32(2);
     }
 
+    if(type != ENBR) {
+        if (level < 0 || level > 9) {
+            level = Z_DEFAULT_COMPRESSION;
+        }
+    } else {
+        if (level < BROTLI_MIN_QUALITY || level > BROTLI_MAX_QUALITY) {
+            level = BROTLI_DEFAULT_QUALITY;
+        }
+    }
+
+    if(type != ENBR) {
+        // compress and return the data to postgres as a bytea
+        PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, type, level));
+    } else {
+        PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, level));
+    }
+}
+
+
+/*
+ * Create a compressed version of a bytea datum
+ * return bytea
+ */
+Datum pgcompress_encode_compressed_jsonb(PG_FUNCTION_ARGS)
+{
+    // get the source bytea
+    StringInfo source = JsonbToStringInfo(PG_GETARG_JSONB_P(0));
+
+    int level = Z_DEFAULT_COMPRESSION;
+
+    //get the default or provided compression
+    int type  = PG_GETARG_INT32(1);
+    if(type < 0 || type > 3) {
+        type = 0;
+    }
+
+    if(type == ENBR) {
+        level = BROTLI_DEFAULT_QUALITY;
+    }
+
+    if (PG_NARGS() == 3) {
+        level = PG_GETARG_INT32(2);
+    }
 
     if(type != ENBR) {
         if (level < 0 || level > 9) {
@@ -84,11 +125,12 @@ Datum pgcompress_encode_compressed_bytea(PG_FUNCTION_ARGS)
 
     if(type != ENBR) {
         // compress and return the data to postgres as a bytea
-        PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, type, level));
+        PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) source->data, source->len, type, level));
     } else {
-        PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((struct varlena *) source, level));
+        PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((Bytef *) source->data, source->len, level));
     }
 }
+
 
 /*
  * Inflate a compressed version of bytea into text.
@@ -136,6 +178,29 @@ Datum pgcompress_decode_compressed_bytea(PG_FUNCTION_ARGS)
 }
 
 
+/*
+ * Inflate a compressed version of bytea into bytea.
+ */
+Datum pgcompress_decode_compressed_jsonb(PG_FUNCTION_ARGS)
+{
+    // get the source bytea of compressed data
+    bytea *source = PG_GETARG_BYTEA_P(0);
+
+    //get the default or provided compression
+    int type  = PG_GETARG_INT32(1);
+    if(type < 0 || type > 3) {
+        type = 0;
+    }
+
+    if(type != ENBR) {
+        // return the uncompressed data as a text string
+        PG_RETURN_TEXT_P(PGCOMPRESSInflate((struct varlena *) source, type));
+    } else {
+        PG_RETURN_TEXT_P(PGCOMPRESSDecodeBrotli((struct varlena *) source));
+    }
+}
+
+
 /**
  * compress text data
  * returns bytea
@@ -155,9 +220,8 @@ Datum pgcompress_encode_zlib_text(PG_FUNCTION_ARGS)
         level = Z_DEFAULT_COMPRESSION;
     }
 
-
     // compress and return the data to postgres as a bytea
-    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, ENZLIB, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, ENZLIB, level));
 }
 
 
@@ -180,9 +244,31 @@ Datum pgcompress_encode_zlib_bytea(PG_FUNCTION_ARGS)
         level = Z_DEFAULT_COMPRESSION;
     }
 
+    // compress and return the bytea to postgress
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, ENZLIB, level));
+}
+
+/*
+ * Create a compressed version of a bytea datum
+ * return bytea
+ */
+Datum pgcompress_encode_zlib_jsonb(PG_FUNCTION_ARGS)
+{
+    // get the source jsonb
+    StringInfo source = JsonbToStringInfo(PG_GETARG_JSONB_P(0));
+
+    //get the default or provided compression
+    int level = Z_DEFAULT_COMPRESSION;
+    if (PG_NARGS() == 2) {
+        level = PG_GETARG_INT32(1);
+    }
+
+    if(level < 0 || level > 9) {
+        level = Z_DEFAULT_COMPRESSION;
+    }
 
     // compress and return the bytea to postgress
-    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, ENZLIB, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) source->data, source->len, ENZLIB, level));
 }
 
 /**
@@ -204,10 +290,8 @@ Datum pgcompress_encode_zlib_raw_text(PG_FUNCTION_ARGS)
         level = Z_DEFAULT_COMPRESSION;
     }
 
-
-
     // compress and return the data to postgres as a bytea
-    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, ENZLIBRAW, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, ENZLIBRAW, level));
 }
 
 
@@ -230,11 +314,32 @@ Datum pgcompress_encode_zlib_raw_bytea(PG_FUNCTION_ARGS)
         level = Z_DEFAULT_COMPRESSION;
     }
 
-
     // compress and return the bytea to postgress
-    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, ENZLIBRAW, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, ENZLIBRAW, level));
 }
 
+/*
+ * Create a compressed version of a bytea datum
+ * return bytea
+ */
+Datum pgcompress_encode_zlib_raw_jsonb(PG_FUNCTION_ARGS)
+{
+    // get the source jsonb
+    StringInfo source = JsonbToStringInfo(PG_GETARG_JSONB_P(0));
+
+    //get the default or provided compression
+    int level = Z_DEFAULT_COMPRESSION;
+    if (PG_NARGS() == 2) {
+        level = PG_GETARG_INT32(1);
+    }
+
+    if(level < 0 || level > 9) {
+        level = Z_DEFAULT_COMPRESSION;
+    }
+
+    // compress and return the bytea to postgress
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) source->data, source->len, ENZLIBRAW, level));
+}
 
 /**
  * compress text data
@@ -255,9 +360,8 @@ Datum pgcompress_encode_gzip_text(PG_FUNCTION_ARGS)
         level = Z_DEFAULT_COMPRESSION;
     }
 
-
     // compress and return the data to postgres as a bytea
-    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, ENGZIP, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, ENGZIP, level));
 }
 
 
@@ -280,10 +384,34 @@ Datum pgcompress_encode_gzip_bytea(PG_FUNCTION_ARGS)
         level = Z_DEFAULT_COMPRESSION;
     }
 
+    // compress and return the bytea to postgress
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, ENGZIP, level));
+}
+
+
+/*
+ * Create a compressed version of a bytea datum
+ * return bytea
+ */
+Datum pgcompress_encode_gzip_jsonb(PG_FUNCTION_ARGS)
+{
+    // get the source jsonb
+    StringInfo source = JsonbToStringInfo(PG_GETARG_JSONB_P(0));
+
+    //get the default or provided compression
+    int level = Z_DEFAULT_COMPRESSION;
+    if (PG_NARGS() == 2) {
+        level = PG_GETARG_INT32(1);
+    }
+
+    if(level < 0 || level > 9) {
+        level = Z_DEFAULT_COMPRESSION;
+    }
 
     // compress and return the bytea to postgress
-    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((struct varlena *) source, ENGZIP, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSDeflate((Bytef *) source->data, source->len, ENGZIP, level));
 }
+
 
 
 /**
@@ -307,7 +435,7 @@ Datum pgcompress_encode_br_text(PG_FUNCTION_ARGS)
 
 
     // compress and return the data to postgres as a bytea
-    PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((struct varlena *) source, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, level));
 }
 
 
@@ -330,10 +458,37 @@ Datum pgcompress_encode_br_bytea(PG_FUNCTION_ARGS)
         level = BROTLI_DEFAULT_QUALITY;
     }
 
+    // compress and return the bytea to postgress
+    PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ, level));
+}
+
+
+/*
+ * Create a compressed version of a bytea datum
+ * return bytea
+ */
+Datum pgcompress_encode_br_jsonb(PG_FUNCTION_ARGS)
+{
+    // get the source jsonb
+    StringInfo source = JsonbToStringInfo(PG_GETARG_JSONB_P(0));
+
+    //get the default or provided compression
+    int level = BROTLI_DEFAULT_QUALITY;
+    if (PG_NARGS() == 2) {
+        level = PG_GETARG_INT32(1);
+    }
+
+    if(level < BROTLI_MIN_QUALITY || level > BROTLI_MAX_QUALITY) {
+        level = BROTLI_DEFAULT_QUALITY;
+    }
+
 
     // compress and return the bytea to postgress
-    PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((struct varlena *) source, level));
+    PG_RETURN_BYTEA_P(PGCOMPRESSEncodeBrotli((Bytef *) source->data, source->len, level));
 }
+
+
+
 
 
 /*
@@ -358,7 +513,23 @@ Datum pgcompress_decode_zlib_bytea(PG_FUNCTION_ARGS)
     bytea *source = PG_GETARG_BYTEA_P(0);
 
     // return the uncompressed data as a bytea
+    PG_RETURN_BYTEA_P(PointerGetDatum(PGCOMPRESSInflate((struct varlena *) source, ENZLIB)));
+}
+
+
+/*
+ * Inflate a compressed version of bytea into bytea.
+ */
+Datum pgcompress_decode_zlib_jsonb(PG_FUNCTION_ARGS)
+{
+    // get the source bytea of compressed data
+    bytea *source = PG_GETARG_BYTEA_P(0);
+
+    // return the uncompressed data as a bytea
     PG_RETURN_BYTEA_P(PGCOMPRESSInflate((struct varlena *) source, ENZLIB));
+
+    //JsonbFromCString
+    return JsonbFromCString((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ);
 }
 
 
@@ -462,7 +633,7 @@ static free_func zfree = myfree;
 /*
  * Create a compressed version of a varlena datum
  */
-static struct varlena * PGCOMPRESSDeflate(struct varlena *source, int type, int level)
+static struct varlena * PGCOMPRESSDeflate(Bytef * source, int length, int type, int level)
 {
 
     // zlib struct
@@ -476,7 +647,7 @@ static struct varlena * PGCOMPRESSDeflate(struct varlena *source, int type, int 
 
     /* conservative upper bound for compressed data */
     uLong complen;
-    complen = VARSIZE(source) + ((VARSIZE(source) + 7) >> 3) + ((VARSIZE(source) + 63) >> 6) + 5 + 18;
+    complen = length + ((length + 7) >> 3) + ((length + 63) >> 6) + 5 + 18;
 
     dest = (struct varlena *) palloc0(complen + VARHDRSZ);
 
@@ -485,8 +656,8 @@ static struct varlena * PGCOMPRESSDeflate(struct varlena *source, int type, int 
     stream.zfree  = zfree;
     stream.opaque = Z_NULL;
 
-    stream.next_in   = (Bytef *) VARDATA(source); // input char array
-    stream.avail_in  = VARSIZE(source) - VARHDRSZ;
+    stream.next_in   = source; // input char array
+    stream.avail_in  = length;
     stream.avail_out = complen;
     stream.next_out  = (Bytef *) VARDATA(dest); // output char array
 
@@ -520,7 +691,7 @@ brotli_g_free_wrapper(void *opaque, void *address)
 /*
  * Create a compressed version of a varlena datum
  */
-static struct varlena * PGCOMPRESSEncodeBrotli(struct varlena *source, int level)
+static struct varlena * PGCOMPRESSEncodeBrotli(Bytef * source, int length, int level)
 {
     //data structure for the compressed data
     struct varlena *dest;
@@ -528,7 +699,7 @@ static struct varlena * PGCOMPRESSEncodeBrotli(struct varlena *source, int level
     /* conservative upper bound for compressed data */
     uLong complen;
 
-    complen = BrotliEncoderMaxCompressedSize(VARSIZE(source));
+    complen = BrotliEncoderMaxCompressedSize(length);
 
     dest = (struct varlena *) palloc0(complen + VARHDRSZ);
 
@@ -536,8 +707,8 @@ static struct varlena * PGCOMPRESSEncodeBrotli(struct varlena *source, int level
         level,
         BROTLI_DEFAULT_WINDOW,
         BROTLI_DEFAULT_MODE,
-        VARSIZE(source),
-        (Bytef *) VARDATA(source),
+        length,
+        source,
         &complen,
         (Bytef *) VARDATA(dest)
     );
@@ -566,10 +737,8 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
     int err;
     uLongf sourceLen = VARSIZE(source) - VARHDRSZ;
 
-    int chunksize  = 1;
     int chunkindex = 0;
     Bytef **chunks = (Bytef **) palloc(MAX_CHUNKS * sizeof(Bytef *));
-
 
     stream.next_in   = (Bytef *) VARDATA(source);
     stream.avail_in  = sourceLen;
@@ -578,7 +747,6 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
     stream.zalloc = zalloc;
     stream.zfree = zfree;
     stream.opaque = (voidpf)0;
-
 
     if(type == ENZLIBRAW) {
         window_bits = -window_bits;
@@ -589,9 +757,9 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
     inflateInit2(&stream, window_bits);
     do {
         if (stream.avail_out == 0) {
-            chunks[chunkindex] = (Bytef *) palloc0(chunksize);
+            chunks[chunkindex] = (Bytef *) palloc0(CHUNKSIZE);
             stream.next_out  = chunks[chunkindex];
-            stream.avail_out = chunksize;
+            stream.avail_out = CHUNKSIZE;
             chunkindex++;
         }
         err = inflate(&stream, Z_NO_FLUSH);
@@ -600,13 +768,20 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
 
     //fill the postgresql datastructure
     dest = (struct varlena *) palloc0(stream.total_out + VARHDRSZ);
-
-    for(int i= 0; i<chunkindex; i++) {
+    if (stream.total_out < CHUNKSIZE) {
         memcpy(
-            VARDATA(dest) + i * chunksize,
-            chunks[i],
-            i * chunksize < stream.total_out ? chunksize : i * chunksize - stream.total_out
+            VARDATA(dest),
+            chunks[0],
+            stream.total_out
         );
+    } else {
+        for(int i= 0; i<chunkindex; i++) {
+            memcpy(
+                VARDATA(dest) + i * CHUNKSIZE,
+                chunks[i],
+                i * CHUNKSIZE < stream.total_out ? CHUNKSIZE : i * CHUNKSIZE - stream.total_out
+            );
+        }
     }
 
     //tell postgres about actual size of the uncompressed data
@@ -629,7 +804,6 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
     uLongf available_out;
     uint8_t * next_out;
     size_t total_out;
-    int chunksize  = 1;
     int chunkindex = 0;
     uint8_t **chunks;
     BrotliDecoderResult result;
@@ -646,13 +820,12 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
     available_out = 0;
     total_out = 0;
 
-
     chunks = (uint8_t **) palloc(MAX_CHUNKS * sizeof(uint8_t *));
     next_in = (const uint8_t *) VARDATA(source);
     do {
-        chunks[chunkindex] = (uint8_t *) palloc0(chunksize);
+        chunks[chunkindex] = (uint8_t *) palloc0(CHUNKSIZE);
         next_out = chunks[chunkindex];
-        available_out = chunksize;
+        available_out = CHUNKSIZE;
         chunkindex++;
 
         result = BrotliDecoderDecompressStream(
@@ -669,15 +842,39 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
     //fill the postgresql datastructure
     dest = (struct varlena *) palloc0(total_out + VARHDRSZ);
 
-    for(int i= 0; i<chunkindex; i++) {
+    if (total_out < CHUNKSIZE) {
         memcpy(
-            VARDATA(dest) + i * chunksize,
-            chunks[i],
-            i * chunksize < total_out ? chunksize : i * chunksize - total_out
+            VARDATA(dest),
+            chunks[0],
+            total_out
         );
+    } else {
+        for(int i= 0; i<chunkindex; i++) {
+            memcpy(
+                VARDATA(dest) + i * CHUNKSIZE,
+                chunks[i],
+                i * CHUNKSIZE < total_out ? CHUNKSIZE : i * CHUNKSIZE - total_out
+            );
+        }
     }
 
     //tell postgres about actual size of the uncompressed data
     SET_VARSIZE(dest, total_out + VARHDRSZ);
     return dest;
+}
+
+/*
+ * SQL function jsonb_pretty (jsonb)
+ *
+ * Converts jsonb to string and length for compression
+ *Jsonb	   *jb = PG_GETARG_JSONB_P(0);
+ * str->data, str->len;
+ */
+StringInfo JsonbToStringInfo(Jsonb *jb)
+{
+	StringInfo str = makeStringInfo();
+
+	JsonbToCString(str, &jb->root, VARSIZE(jb));
+
+	return str;
 }
