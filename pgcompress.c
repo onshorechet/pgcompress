@@ -181,24 +181,24 @@ Datum pgcompress_decode_compressed_bytea(PG_FUNCTION_ARGS)
 /*
  * Inflate a compressed version of bytea into bytea.
  */
-Datum pgcompress_decode_compressed_jsonb(PG_FUNCTION_ARGS)
-{
-    // get the source bytea of compressed data
-    bytea *source = PG_GETARG_BYTEA_P(0);
-
-    //get the default or provided compression
-    int type  = PG_GETARG_INT32(1);
-    if(type < 0 || type > 3) {
-        type = 0;
-    }
-
-    if(type != ENBR) {
-        // return the uncompressed data as a text string
-        PG_RETURN_TEXT_P(PGCOMPRESSInflate((struct varlena *) source, type));
-    } else {
-        PG_RETURN_TEXT_P(PGCOMPRESSDecodeBrotli((struct varlena *) source));
-    }
-}
+//Datum pgcompress_decode_compressed_jsonb(PG_FUNCTION_ARGS)
+//{
+//    // get the source bytea of compressed data
+//    bytea *source = PG_GETARG_BYTEA_P(0);
+//
+//    //get the default or provided compression
+//    int type  = PG_GETARG_INT32(1);
+//    if(type < 0 || type > 3) {
+//        type = 0;
+//    }
+//
+//    if(type != ENBR) {
+//        // return the uncompressed data as a text string
+//        PG_RETURN_TEXT_P(PGCOMPRESSInflate((struct varlena *) source, type));
+//    } else {
+//        PG_RETURN_TEXT_P(PGCOMPRESSDecodeBrotli((struct varlena *) source));
+//    }
+//}
 
 
 /**
@@ -520,17 +520,17 @@ Datum pgcompress_decode_zlib_bytea(PG_FUNCTION_ARGS)
 /*
  * Inflate a compressed version of bytea into bytea.
  */
-Datum pgcompress_decode_zlib_jsonb(PG_FUNCTION_ARGS)
-{
-    // get the source bytea of compressed data
-    bytea *source = PG_GETARG_BYTEA_P(0);
-
-    // return the uncompressed data as a bytea
-    PG_RETURN_BYTEA_P(PGCOMPRESSInflate((struct varlena *) source, ENZLIB));
-
-    //JsonbFromCString
-    return JsonbFromCString((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ);
-}
+//Datum pgcompress_decode_zlib_jsonb(PG_FUNCTION_ARGS)
+//{
+//    // get the source bytea of compressed data
+//    bytea *source = PG_GETARG_BYTEA_P(0);
+//
+//    // return the uncompressed data as a bytea
+//    PG_RETURN_BYTEA_P(PGCOMPRESSInflate((struct varlena *) source, ENZLIB));
+//
+//    //JsonbFromCString
+//    return JsonbFromCString((Bytef *) VARDATA(source), VARSIZE(source) - VARHDRSZ);
+//}
 
 
 /*
@@ -725,8 +725,6 @@ static struct varlena * PGCOMPRESSEncodeBrotli(Bytef * source, int length, int l
  */
 static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
 {
-    const unsigned int MAX_CHUNKS = 1000;
-
     //data structure for the uncompressed data
     struct varlena *dest;
 
@@ -794,8 +792,6 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
  */
 static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
 {
-    const unsigned int MAX_CHUNKS = 1000;
-
     //data structure for the uncompressed data
     struct varlena *dest;
 
