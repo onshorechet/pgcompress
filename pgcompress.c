@@ -776,6 +776,7 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
             chunks[0],
             stream.total_out
         );
+        pfree(chunks[0]);
     } else {
         for(int i= 0; i<chunkindex; i++) {
             memcpy(
@@ -783,8 +784,10 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
                 chunks[i],
                 i * CHUNKSIZE < stream.total_out ? CHUNKSIZE : i * CHUNKSIZE - stream.total_out
             );
+            pfree(chunks[i]);
         }
     }
+    pfree(chunks);
 
     //tell postgres about actual size of the uncompressed data
     SET_VARSIZE(dest, stream.total_out + VARHDRSZ);
@@ -848,6 +851,7 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
             chunks[0],
             total_out
         );
+        pfree(chunks[0]);
     } else {
         for(int i= 0; i<chunkindex; i++) {
             memcpy(
@@ -855,8 +859,11 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
                 chunks[i],
                 i * CHUNKSIZE < total_out ? CHUNKSIZE : i * CHUNKSIZE - total_out
             );
+            pfree(chunks[i]);
         }
     }
+
+    pfree(chunks);
 
     //tell postgres about actual size of the uncompressed data
     SET_VARSIZE(dest, total_out + VARHDRSZ);

@@ -16,11 +16,13 @@ const int ENGZIP = 2;
 const int ENBR = 3;
 
 //inflation chunksize in bytes ie 4MB
-const int CHUNKSIZE = 4194304;
+//const int CHUNKSIZE = 4194304;
+//4096 => 4kB
+const int CHUNKSIZE = 4096;
 
 //CHUNKSIZE * MAX_CHUNKS can support 4GB of decoding
 //Maximum number of chunks to support when decoding
-const unsigned int MAX_CHUNKS = 1024;
+const unsigned int MAX_CHUNKS = 4048;
 
 /**
  * delfate and inflate data from postgres, return a pointer to that data
