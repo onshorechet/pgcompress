@@ -685,7 +685,11 @@ brotli_g_malloc_wrapper(void *opaque, size_t size)
 static void
 brotli_g_free_wrapper(void *opaque, void *address)
 {
-    pfree(address);
+    //if the input is too small br will not create vars
+    //for all of the memory it tries to clear
+    if(address) {
+        pfree(address);
+    }
 }
 
 /*
@@ -699,7 +703,7 @@ static struct varlena * PGCOMPRESSEncodeBrotli(Bytef * source, int length, int l
     /* conservative upper bound for compressed data */
     uLong complen;
 
-    complen = BrotliEncoderMaxCompressedSize(length);
+    complen = BrotliEncoderMaxCompressedSize(length) + 1;
 
     dest = (struct varlena *) palloc0(complen + VARHDRSZ);
 
