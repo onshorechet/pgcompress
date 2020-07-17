@@ -1,6 +1,11 @@
 --General Encode/Decode
-CREATE TYPE compression_type AS ENUM ('zlib', 'zlibraw', 'gzip', 'br');
 
+--defaults to these are zlib and at its default compression
+--to encode different types pass 0-3 as the first int argument
+--zlib = 0; zlib_raw = 1; gzip = 2; br = 3;
+--the last argument is the compression level
+--for zlib - gzip the compression levels are 0-9
+--for br it is 0-11 because 11 is louder
 CREATE FUNCTION encode_compressed(text) RETURNS bytea
   AS 'pgcompress', 'pgcompress_encode_zlib_text'
   LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
