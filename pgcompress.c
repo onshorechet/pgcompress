@@ -623,7 +623,9 @@ void *myalloc(q, n, m)
 void myfree(void *q, void *p)
 {
     (void)q;
-    pfree(p);
+    if(p) {
+        pfree(p);
+    }
 }
 
 static alloc_func zalloc = myalloc;
@@ -769,7 +771,7 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
     inflateEnd(&stream);
 
     //fill the postgresql datastructure
-    dest = (struct varlena *) palloc0(stream.total_out + VARHDRSZ);
+    dest = (struct varlena *) palloc0(chunkindex * CHUNKSIZE + VARHDRSZ);
     if (stream.total_out < CHUNKSIZE) {
         memcpy(
             VARDATA(dest),
@@ -782,12 +784,13 @@ static struct varlena * PGCOMPRESSInflate(struct varlena *source, int type)
             memcpy(
                 VARDATA(dest) + i * CHUNKSIZE,
                 chunks[i],
-                i * CHUNKSIZE < stream.total_out ? CHUNKSIZE : i * CHUNKSIZE - stream.total_out
+                CHUNKSIZE
             );
             pfree(chunks[i]);
         }
     }
     pfree(chunks);
+
 
     //tell postgres about actual size of the uncompressed data
     SET_VARSIZE(dest, stream.total_out + VARHDRSZ);
@@ -841,9 +844,11 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
         );
 
     } while (result == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT && chunkindex < MAX_CHUNKS);
+    BrotliDecoderDestroyInstance(decoder);
+    pfree(decoder);
 
     //fill the postgresql datastructure
-    dest = (struct varlena *) palloc0(total_out + VARHDRSZ);
+    dest = (struct varlena *) palloc0(chunkindex * CHUNKSIZE + VARHDRSZ);
 
     if (total_out < CHUNKSIZE) {
         memcpy(
@@ -857,14 +862,13 @@ static struct varlena * PGCOMPRESSDecodeBrotli(struct varlena *source)
             memcpy(
                 VARDATA(dest) + i * CHUNKSIZE,
                 chunks[i],
-                i * CHUNKSIZE < total_out ? CHUNKSIZE : i * CHUNKSIZE - total_out
+                CHUNKSIZE
             );
             pfree(chunks[i]);
         }
     }
 
     pfree(chunks);
-
     //tell postgres about actual size of the uncompressed data
     SET_VARSIZE(dest, total_out + VARHDRSZ);
     return dest;

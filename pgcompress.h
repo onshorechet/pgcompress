@@ -18,7 +18,7 @@ const int ENBR = 3;
 //inflation chunksize in bytes ie 4MB
 //const int CHUNKSIZE = 4194304;
 //4096 => 4kB
-const int CHUNKSIZE = 4096;
+const int CHUNKSIZE = 1048576; //1 MB
 
 //CHUNKSIZE * MAX_CHUNKS can support 4GB of decoding
 //Maximum number of chunks to support when decoding
